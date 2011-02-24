@@ -137,7 +137,7 @@ def _pack_paths(path_stream,
                 workdir=None):
     """
         usage:
-            find /usr/lib/foo | $0 pack_paths foo_0.1 'awsome app foo'
+            find /usr/lib/foo | $0 pack paths foo_0.1 'awsome app foo'
     """
     # 
     # convert path stream to cpio archive
@@ -228,9 +228,40 @@ class Panya(object):
         try:
             major, minor=f.__name__.split('_', 1)
         except ValueError:
-            major, minor='top', f.__name__
+            major, minor='do', f.__name__
         self.dispatcher.setdefault(major,{})[minor]=f
+
+        # populate help map with docs: help --> 'show files' --> show_files.func_doc
+        # xx how to sort? lexical or frequency of usage?
+        for major, minor, doc in self.docs():
+            self.dispatcher.setdefault('help',{})[major]=lambda minor: self.help(major, minor, doc)
+
         return f
+
+    def help(self, major, minor, doc):
+        print major, minor, doc
+
+    def docs(self):
+        for major, cmap in self.dispatcher.items():
+            for minor, cfun in cmap.items():
+                yield major, minor, cfun.func_doc
+
+    def usage(self):
+        """ me major minor: first line of func doc
+        """
+        # from inspect import getargspec
+        synopsis=[]
+        for major, cmap in self.dispatcher.items():
+            if major=='help':
+                continue
+            for minor, cfun in cmap.items():
+                synopsis.append("%-25s %s" % (' '.join([os.path.basename(sys.argv[0]), 
+                                                     major, 
+                                                     minor+':']), 
+                                            (cfun.func_doc or '').split('\n')[0].strip()))
+        return "".join(["\nUsage:",
+                        "\n    ".join(['']+synopsis),
+                        "\nSee '%s help foo bar' for more detail." % (sys.argv[0])])
 
 panya=Panya()
 
@@ -238,8 +269,8 @@ panya=Panya()
 def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
     """ pack cpio archive into a .deb package.
     usage: 
-     $ find /usr/lib/foo/ | cpio -o | debify.py pack_cpio foo_1.0 '<desc>'
-     $ (cd /usr/lib; find foo | cpio -o) | debify.py pack_cpio foo_1.0 '<desc>' --dest==/alt/lib
+     $ find /usr/lib/foo/ | cpio -o | debify.py pack cpio foo_1.0 '<desc>'
+     $ (cd /usr/lib; find foo | cpio -o) | debify.py pack cpio foo_1.0 '<desc>' --dest==/alt/lib
 
     """
     debug('#', 'workdir:', workdir)
@@ -259,7 +290,7 @@ def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False
 def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
     """ pack paths fed to stdin as a .deb package.
     usage:
-    find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
+    find /usr/lib/foo | $0 pack paths foo_1.0 '<desc>'
     """
     info=_pack_paths(
         sys.stdin, 
@@ -277,7 +308,7 @@ def pack_paths(name_version, description, dest=None, postinst=None, nobuild=Fals
 def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=False, workdir=None):
     """ package files under a directory
     usage:
-    $0 pack_dir foo_0.1 'most awsome foo' /usr/lib/foo --dest=/alt/lib/
+    $0 pack dir foo_0.1 'most awsome foo' /usr/lib/foo --dest=/alt/lib/
     """
     base_dir,target_dir=os.path.split(dir.rstrip('/'))
     pipe=Popen(['/bin/sh', '-c', 
@@ -300,7 +331,7 @@ def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=F
     report(deb_file)
 
 @panya.command
-def relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
+def deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
     """ create a .deb file from installed package with alternate destination.
         package name, version and description is taken from the source (installed) package.
 
@@ -343,6 +374,10 @@ def relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=
 
 @panya.command
 def show_files(deb_file):
+    """ list the content of file names.
+        unlike 'dpkg --contents', only the file names are shown.
+        deb_file: deb file whose files are to be shown.
+    """
 
     # ar pf - data.tar.gz | gunzip | tar tf -
     # ar does not read from stdin
@@ -352,11 +387,16 @@ def show_files(deb_file):
     if p.wait()!=0:
         die("command failed: "+str(cmd))
 
-def cmd_args(me, major, minor, *rest):
-    return major, minor, rest
+@panya.command
+def help_usage():
+    """ usage
+    """
+    print panya.usage()
 
-def usage():
-    return "\nusage ...."
+def cmd_args(me, major=None, minor=None, *rest):
+    if not minor:
+        major,minor='help','usage'
+    return major, minor, rest
 
 def main():
 
@@ -365,7 +405,7 @@ def main():
     try:
         cmd_f=panya.dispatcher[major][minor]
     except:
-        die("no such command %s %s" % (major, minor), usage())
+        die("no such command '%s' '%s'" % (major, minor), panya.usage())
     # invoke it
     cmd_f(*args)
 
