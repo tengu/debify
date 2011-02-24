@@ -213,130 +213,161 @@ def rm_rf(p):
     else:                       # isfile or islink
         os.unlink(p)
 
-################
+class Panya(object):
+    """ manage command functions
+    """
+
+    def __init__(self):
+        self.dispatcher=dict()
+
+    def command(self, f):
+        """ replacement for @baker.command
+            register the function with the dispatcher.
+            function name is split by the first _ into major and minor parts.
+        """
+        try:
+            major, minor=f.__name__.split('_', 1)
+        except ValueError:
+            major, minor='top', f.__name__
+        self.dispatcher.setdefault(major,{})[minor]=f
+        return f
+
+panya=Panya()
+
+@panya.command
+def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
+    """ pack cpio archive into a .deb package.
+    usage: 
+     $ find /usr/lib/foo/ | cpio -o | debify.py pack_cpio foo_1.0 '<desc>'
+     $ (cd /usr/lib; find foo | cpio -o) | debify.py pack_cpio foo_1.0 '<desc>' --dest==/alt/lib
+
+    """
+    debug('#', 'workdir:', workdir)
+    info=_pack(
+          name_version, 
+          description, 
+          workdir=workdir, 
+          cpio_stream=sys.stdin,
+          dest=dest,
+          postinst=postinst,
+          nobuild=nobuild)
+
+    deb_file, workdir=info
+    report(deb_file)
+
+@panya.command
+def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
+    """ pack paths fed to stdin as a .deb package.
+    usage:
+    find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
+    """
+    info=_pack_paths(
+        sys.stdin, 
+        name_version, 
+        description, 
+        dest=dest, 
+        postinst=postinst, 
+        nobuild=nobuild, 
+        workdir=workdir)
+
+    deb_file, workdir=info
+    report(deb_file)
+
+@panya.command
+def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=False, workdir=None):
+    """ package files under a directory
+    usage:
+    $0 pack_dir foo_0.1 'most awsome foo' /usr/lib/foo --dest=/alt/lib/
+    """
+    base_dir,target_dir=os.path.split(dir.rstrip('/'))
+    pipe=Popen(['/bin/sh', '-c', 
+                '/usr/bin/find {target_dir} | /bin/cpio -o --quiet'.format(target_dir=target_dir)], 
+               stdout=PIPE, 
+               cwd=base_dir)
+    info=_pack(
+          name_version, 
+          description, 
+          workdir=workdir, 
+          cpio_stream=pipe.stdout,
+          dest=dest,
+          postinst=postinst,
+          nobuild=nobuild)
+
+    if pipe.wait()!=0:
+        die("command failed: ...");
+
+    deb_file, workdir=info
+    report(deb_file)
+
+@panya.command
+def relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
+    """ create a .deb file from installed package with alternate destination.
+        package name, version and description is taken from the source (installed) package.
+
+        usage:
+           $0 relocate <src_pkg_name> --dest=<dest_dir>
+        example:
+           $0 relocate libfoo --dest=/alt/lib/
+              Suppose package 'libfoo' installs under  /usr/lib/foo
+              Newly created package will install under /alt/lib/foo
+    """
+
+    cmdtpl=['/usr/bin/dpkg-query', '-W', '-f', '${Package}_${Version}::::${Description}', src_pkg_name]
+    p=Popen(cmdtpl, stdout=PIPE)
+    name_version, description=p.stdout.read().split('::::')
+    assert p.wait()==0, ' '.join(('FAIL:',)+cmdtpl)
+
+    description+=' (relocated to {dest})'.format(dest=dest)
+    if new_pkg_name:
+        src_pkg_name, version=name_version.split('_',1)
+        name_version='_'.join([new_pkg_name, version])
+    else:
+        name_version='relocated-'+name_version
+
+    cmd='/usr/bin/dpkg -L {src_pkg_name}'.format(src_pkg_name=src_pkg_name)
+    pipe=Popen(filter(None, cmd.split(' ')), stdout=PIPE)
+
+    info=_pack_paths(pipe.stdout,
+                     name_version, 
+                     description, 
+                     dest=dest,
+                     postinst=postinst,
+                     nobuild=nobuild,
+                     workdir=workdir, 
+                     )
+
+    assert pipe.wait()==0, 'FAIL: '+cmd
+
+    deb_file, workdir=info
+    report(deb_file)
+
+@panya.command
+def show_files(deb_file):
+
+    # ar pf - data.tar.gz | gunzip | tar tf -
+    # ar does not read from stdin
+    cmd=['/bin/sh', '-c', 
+         '{ar} pf {deb_file} data.tar.gz | {gunzip} | {tar} tf -'.format(deb_file=deb_file, **cmds)]
+    p=Popen(cmd)
+    if p.wait()!=0:
+        die("command failed: "+str(cmd))
+
+def cmd_args(me, major, minor, *rest):
+    return major, minor, rest
+
+def usage():
+    return "\nusage ...."
 
 def main():
-    import baker
 
-    @baker.command
-    def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
-        """ pack cpio archive into a .deb package.
-usage: 
- $ find /usr/lib/foo/ | cpio -o | debify.py pack_cpio foo_1.0 '<desc>'
- $ (cd /usr/lib; find foo | cpio -o) | debify.py pack_cpio foo_1.0 '<desc>' --dest==/alt/lib
-            
-        """
-        debug('#', 'workdir:', workdir)
-        info=_pack(
-              name_version, 
-              description, 
-              workdir=workdir, 
-              cpio_stream=sys.stdin,
-              dest=dest,
-              postinst=postinst,
-              nobuild=nobuild)
-
-        deb_file, workdir=info
-        report(deb_file)
-
-    @baker.command
-    def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
-        """ pack paths fed to stdin as a .deb package.
-usage:
-  find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
-        """
-        info=_pack_paths(
-            sys.stdin, 
-            name_version, 
-            description, 
-            dest=dest, 
-            postinst=postinst, 
-            nobuild=nobuild, 
-            workdir=workdir)
-
-        deb_file, workdir=info
-        report(deb_file)
-
-    @baker.command
-    def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=False, workdir=None):
-        """ package files under a directory
-usage:
-  $0 pack_dir foo_0.1 'most awsome foo' /usr/lib/foo --dest=/alt/lib/
-        """
-        base_dir,target_dir=os.path.split(dir.rstrip('/'))
-        pipe=Popen(['/bin/sh', '-c', 
-                    '/usr/bin/find {target_dir} | /bin/cpio -o --quiet'.format(target_dir=target_dir)], 
-                   stdout=PIPE, 
-                   cwd=base_dir)
-        info=_pack(
-              name_version, 
-              description, 
-              workdir=workdir, 
-              cpio_stream=pipe.stdout,
-              dest=dest,
-              postinst=postinst,
-              nobuild=nobuild)
-
-        if pipe.wait()!=0:
-            die("command failed: ...");
-
-        deb_file, workdir=info
-        report(deb_file)
-
-    @baker.command
-    def relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
-        """ create a .deb file from installed package with alternate destination.
-            package name, version and description is taken from the source (installed) package.
-
-            usage:
-               $0 relocate <src_pkg_name> --dest=<dest_dir>
-            example:
-	       $0 relocate libfoo --dest=/alt/lib/
-                  Suppose package 'libfoo' installs under  /usr/lib/foo
-                  Newly created package will install under /alt/lib/foo
-        """
-
-        cmdtpl=['/usr/bin/dpkg-query', '-W', '-f', '${Package}_${Version}::::${Description}', src_pkg_name]
-        p=Popen(cmdtpl, stdout=PIPE)
-        name_version, description=p.stdout.read().split('::::')
-        assert p.wait()==0, ' '.join(('FAIL:',)+cmdtpl)
-
-        description+=' (relocated to {dest})'.format(dest=dest)
-        if new_pkg_name:
-            src_pkg_name, version=name_version.split('_',1)
-            name_version='_'.join([new_pkg_name, version])
-        else:
-            name_version='relocated-'+name_version
-        
-        cmd='/usr/bin/dpkg -L {src_pkg_name}'.format(src_pkg_name=src_pkg_name)
-        pipe=Popen(filter(None, cmd.split(' ')), stdout=PIPE)
-
-        info=_pack_paths(pipe.stdout,
-                         name_version, 
-                         description, 
-                         dest=dest,
-                         postinst=postinst,
-                         nobuild=nobuild,
-                         workdir=workdir, 
-                         )
-
-        assert pipe.wait()==0, 'FAIL: '+cmd
-
-        deb_file, workdir=info
-        report(deb_file)
-
-    @baker.command
-    def files(deb_file):
-
-        # ar pf - data.tar.gz | gunzip | tar tf -
-        # ar does not read from stdin
-        cmd=['/bin/sh', '-c', 
-             '{ar} pf {deb_file} data.tar.gz | {gunzip} | {tar} tf -'.format(deb_file=deb_file, **cmds)]
-        p=Popen(cmd)
-        if p.wait()!=0:
-            die("command failed: "+str(cmd))
-
-    baker.run()
+    major, minor, args=cmd_args(*sys.argv)
+    # resove the command
+    try:
+        cmd_f=panya.dispatcher[major][minor]
+    except:
+        die("no such command %s %s" % (major, minor), usage())
+    # invoke it
+    cmd_f(*args)
 
 if __name__=='__main__':
     
