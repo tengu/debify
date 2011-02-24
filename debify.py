@@ -233,13 +233,19 @@ class Panya(object):
 
         # populate help map with docs: help --> 'show files' --> show_files.func_doc
         # xx how to sort? lexical or frequency of usage?
-        for major, minor, doc in self.docs():
-            self.dispatcher.setdefault('help',{})[major]=lambda minor: self.help(major, minor, doc)
+        for major, cmap in self.dispatcher.items():
+            self.dispatcher.setdefault('help',{})[major]=(lambda ma: 
+                                                          lambda mi=None: self.help(ma,mi))(major)
 
         return f
 
-    def help(self, major, minor, doc):
-        print major, minor, doc
+    def help(self, major, minor):
+        me=os.path.basename(sys.argv[0])
+        if minor==None:
+            for minor, f in self.dispatcher[major].items():
+                print me, major, minor+':', f.func_doc
+        else:
+            print me, major, minor+':', self.dispatcher[major][minor].func_doc
 
     def docs(self):
         for major, cmap in self.dispatcher.items():
