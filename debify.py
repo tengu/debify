@@ -5,6 +5,12 @@ import re
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 
+cmds=dict(
+    ar='/usr/bin/ar',
+    gunzip='/bin/gunzip',
+    tar='/bin/tar',
+)
+
 """
 """
 
@@ -318,6 +324,17 @@ usage:
 
         deb_file, workdir=info
         report(deb_file)
+
+    @baker.command
+    def files(deb_file):
+
+        # ar pf - data.tar.gz | gunzip | tar tf -
+        # ar does not read from stdin
+        cmd=['/bin/sh', '-c', 
+             '{ar} pf {deb_file} data.tar.gz | {gunzip} | {tar} tf -'.format(deb_file=deb_file, **cmds)]
+        p=Popen(cmd)
+        if p.wait()!=0:
+            die("command failed: "+str(cmd))
 
     baker.run()
 
