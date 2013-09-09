@@ -6,6 +6,7 @@ import glob
 import json
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
+import inspect
 
 cmds=dict(
     ar='/usr/bin/ar',
@@ -239,6 +240,7 @@ class Panya(object):
             self.dispatcher.setdefault('help',{})[major]=(lambda ma: 
                                                           lambda mi=None: self.help(ma,mi))(major)
 
+
         return f
 
     def help(self, major, minor):
@@ -386,6 +388,8 @@ def show_files(deb_file):
         unlike 'dpkg --contents', only the file names are shown.
         deb_file: deb file whose files are to be shown.
     """
+    # todo: check all commands
+    assert os.path.exists(cmds['ar']), ('need ar', 'try: sudo apt-get install binutils')
 
     # ar pf - data.tar.gz | gunzip | tar tf -
     # ar does not read from stdin
@@ -500,8 +504,15 @@ def show_modified(pkg_glob, fetch=False, prefix=None):
                 print >>sys.stderr, line
 
 @panya.command
-def show_diff(deb_file, workdir=None, fmt=None):
+def show_diff(pkg_glob, fetch=False, workdir=None, fmt=None):
     """diff ..."""
+    # todo: take pkg_glob
+
+    for name_ver, debfile in deb_files(pkg_glob, fetch=fetch):
+        show_diff_deb_file(debfile, workdir=workdir, fmt=fmt)
+
+
+def show_diff_deb_file(deb_file, workdir=None, fmt=None):
 
     if workdir:
         mkdir_p(workdir)
