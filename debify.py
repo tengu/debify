@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 import sys,os
 import re
+import glob
+import json
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 
@@ -380,18 +382,158 @@ def deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobu
 
 @panya.command
 def show_files(deb_file):
-    """ list the content of file names.
+    """ list the contents of a deb file.
         unlike 'dpkg --contents', only the file names are shown.
         deb_file: deb file whose files are to be shown.
     """
 
     # ar pf - data.tar.gz | gunzip | tar tf -
     # ar does not read from stdin
-    cmd=['/bin/sh', '-c', 
-         '{ar} pf {deb_file} data.tar.gz | {gunzip} | {tar} tf -'.format(deb_file=deb_file, **cmds)]
-    p=Popen(cmd)
+    cmd=['{ar} pf {deb_file} data.tar.gz | {gunzip} | {tar} tf -'.format(deb_file=deb_file, **cmds)]
+    p=Popen(cmd, shell=True)
     if p.wait()!=0:
         die("command failed: "+str(cmd))
+
+### verification
+
+def installed_pkgs(pkg_glob):
+    """generate installed (pkg,ver) matching pkg_glob"""
+
+    fmt="""${Status}\t${Package}=${Version}\n"""
+    out,err=Popen(['/usr/bin/dpkg-query', '-f', fmt, '-W', pkg_glob], stdout=PIPE, stdin=PIPE).communicate()
+    for line in out.split('\n'):
+        if not line:
+            continue
+        status,pkg=line.split('\t')
+        if status=='install ok installed':
+            name,version=pkg.split('=')
+            yield (name,version)
+        elif status=='unknown ok not-installed':
+            pass
+        else:
+            print >>sys.stderr, line
+
+    for line in (err or '').split('\n'):
+        if line:
+            print >>sys.stderr, line
+
+@panya.command
+def show_installed_pkgs(pkg_glob):
+    """show package and version of installed packages matching a pattern. a nicer version of dpkg -l.
+    
+    example:
+        installed_pkgs yoyo\*
+        yoyodyne-server
+        yoyodyne-client
+        yoyodyne-dev
+    """
+    for name_version in installed_pkgs(pkg_glob):
+        print '='.join(name_version)
+
+def deb_files(pkg_glob):
+
+    return glob.glob(os.path.join('/var/cache/apt/archives', pkg_glob + '*.deb'))
+
+@panya.command
+def show_deb_files(pkg_glob):
+    """list cached .deb files under /var/cache/apt/archives/"""
+
+    for df in deb_files(pkg_glob):
+        print df
+
+def deb_files(pkg_glob, fetch=False):
+    """find cached deb files for the pkg_glob"""
+
+    assert os.path.exists('/usr/bin/debsums'), ('need', '/usr/bin/debsums', 'try apt-get install debsums')
+    # 
+    # enumerate installed pkgs
+    # 
+    pkgs=installed_pkgs(pkg_glob)
+    # 
+    # find debfile for these pkgs
+    # 
+    debs=[]
+    for name_ver in pkgs:
+        name_eq_ver='='.join(name_ver)
+        deb_glob=os.path.join('/var/cache/apt/archives/', '{0}*.deb'.format('_'.join(name_ver)))
+        matches=glob.glob(deb_glob)
+        if not matches:
+            # 
+            # if missing fetch: apt-get install --reinstall --download-only foo=ver
+            # 
+            if fetch:
+                print >>sys.stderr, 'fetching:', name_eq_ver
+                p=Popen(['/usr/bin/sudo', '/usr/bin/apt-get',  'install', '--reinstall', '--download-only', name_eq_ver])
+                p.wait()        # xx check status
+            else:
+                print >>sys.stderr, 'skipping:', name_eq_ver
+                continue
+
+        matches=glob.glob(deb_glob)
+        if not matches:
+            print >>sys.stderr, 'failed to fetch', name_eq_ver
+            continue
+        assert len(matches)==1, ('multiple or zero matches', matches, deb_glob)
+        debs.append( (name_ver, matches[0]) )
+
+    return debs
+
+@panya.command
+def show_modified(pkg_glob, fetch=False, prefix=None):
+    """report files whose checksum differs from the pkg
+    * fetch:  downloads the deb file if necessary
+    * prefix: first col in tsv if supplied
+    """
+    # 
+    # do checksum analysis using the right deb file.
+    # 
+    for name_ver, debfile in deb_files(pkg_glob, fetch=fetch):
+
+        out,err=Popen(['/usr/bin/debsums', '-c', '--generate=all', debfile], stdout=PIPE, stderr=PIPE).communicate()
+
+        for line in out.split('\n'):
+            if line:
+                print '\t'.join(filter(None, [prefix]+['='.join(name_ver), line]))
+
+        for line in err.split('\n'):
+            if line:
+                print >>sys.stderr, line
+
+@panya.command
+def show_diff(deb_file, workdir=None, fmt=None):
+    """diff ..."""
+
+    if workdir:
+        mkdir_p(workdir)
+    else:
+        workdir=mkdtemp(prefix='debify-')
+
+    workdir=dump_content(deb_file, workdir)
+    for xdir,sdir,files in os.walk(workdir):
+        for f in files:
+            packaged=os.path.join(xdir, f)
+            assert packaged.startswith(workdir), (packaged, xdir)
+            installed=packaged[len(workdir):]
+            out,err=Popen(['/usr/bin/diff', packaged, installed], stdout=PIPE).communicate()
+            if out:
+                if fmt=='json':
+                    print json.dumps(dict(file=installed, diff=out))
+                else:
+                    print installed
+                    print out
+
+
+def dump_content(deb_file, workdir):
+
+    cmd='{ar} pf {deb_file} data.tar.gz | tar x -z -C {workdir} -f -'.format(deb_file=deb_file, 
+                                                                             workdir=workdir,
+                                                                             **cmds)
+    p=Popen(cmd, shell=True)
+    if p.wait()!=0:
+        die("command failed: "+str(cmd))
+
+    return workdir
+        
 
 @panya.command
 def help_usage():
