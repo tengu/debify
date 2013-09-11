@@ -7,6 +7,9 @@ import json
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 import inspect
+from optparse import OptionParser
+
+import baker
 
 cmds=dict(
     ar='/usr/bin/ar',
@@ -216,68 +219,36 @@ def rm_rf(p):
     else:                       # isfile or islink
         os.unlink(p)
 
-class Panya(object):
-    """ manage command functions
-    """
+class Cmd(object):
 
-    def __init__(self):
-        self.dispatcher=dict()
+    def __init__(self, f, kwd):
+        self.f=f
+        self.kwd=kwd
 
-    def command(self, f):
-        """ replacement for @baker.command
-            register the function with the dispatcher.
-            function name is split by the first _ into major and minor parts.
-        """
+    def __call__(self):
+
+        parser = OptionParser()
+        parser.add_option("-f", "--fmt", action="store", dest="fmt", default=None, help="output format")        
+        (optd, opta) = parser.parse_args()
+        kwd=self.kwd.copy()
+        kwd.update(optd.__dict__)
+        # major,minor,*args
+        positional=opta[2:]
+
         try:
-            major, minor=f.__name__.split('_', 1)
-        except ValueError:
-            major, minor='do', f.__name__
-        self.dispatcher.setdefault(major,{})[minor]=f
+            return self.f(*positional, **kwd)
+        except TypeError, e:
+            self.help()
+            sys.exit(2)
+                
 
-        # populate help map with docs: help --> 'show files' --> show_files.func_doc
-        # xx how to sort? lexical or frequency of usage?
-        for major, cmap in self.dispatcher.items():
-            self.dispatcher.setdefault('help',{})[major]=(lambda ma: 
-                                                          lambda mi=None: self.help(ma,mi))(major)
+    def help(self):
+        print self.f.func_doc
 
+@baker.command
+def x_pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
+    """Pack cpio archive into a .deb package.
 
-        return f
-
-    def help(self, major, minor):
-        me=os.path.basename(sys.argv[0])
-        if minor==None:
-            for minor, f in self.dispatcher[major].items():
-                print me, major, minor+':', f.func_doc
-        else:
-            print me, major, minor+':', self.dispatcher[major][minor].func_doc
-
-    def docs(self):
-        for major, cmap in self.dispatcher.items():
-            for minor, cfun in cmap.items():
-                yield major, minor, cfun.func_doc
-
-    def usage(self):
-        """ me major minor: first line of func doc
-        """
-        # from inspect import getargspec
-        synopsis=[]
-        for major, cmap in self.dispatcher.items():
-            if major=='help':
-                continue
-            for minor, cfun in cmap.items():
-                synopsis.append("%-25s %s" % (' '.join([os.path.basename(sys.argv[0]), 
-                                                     major, 
-                                                     minor+':']), 
-                                            (cfun.func_doc or '').split('\n')[0].strip()))
-        return "".join(["\nUsage:",
-                        "\n    ".join(['']+synopsis),
-                        "\nSee '%s help foo bar' for more detail." % (sys.argv[0])])
-
-panya=Panya()
-
-@panya.command
-def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
-    """ pack cpio archive into a .deb package.
     usage: 
      $ find /usr/lib/foo/ | cpio -o | debify.py pack cpio foo_1.0 '<desc>'
      $ (cd /usr/lib; find foo | cpio -o) | debify.py pack cpio foo_1.0 '<desc>' --dest==/alt/lib
@@ -296,11 +267,12 @@ def pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False
     deb_file, workdir=info
     report(deb_file)
 
-@panya.command
+@baker.command
 def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
-    """ pack paths fed to stdin as a .deb package.
+    """Package paths fed to stdin.
+
     usage:
-    find /usr/lib/foo | $0 pack paths foo_1.0 '<desc>'
+    find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
     """
     info=_pack_paths(
         sys.stdin, 
@@ -314,11 +286,12 @@ def pack_paths(name_version, description, dest=None, postinst=None, nobuild=Fals
     deb_file, workdir=info
     report(deb_file)
 
-@panya.command
+@baker.command
 def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=False, workdir=None):
-    """ package files under a directory
+    """Package files under a directory.
+
     usage:
-    $0 pack dir foo_0.1 'most awsome foo' /usr/lib/foo --dest=/alt/lib/
+    $0 pack dir foo_0.1 'most awesome foo' /usr/lib/foo --dest=/alt/lib/
     """
     base_dir,target_dir=os.path.split(dir.rstrip('/'))
     pipe=Popen(['/bin/sh', '-c', 
@@ -340,9 +313,10 @@ def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=F
     deb_file, workdir=info
     report(deb_file)
 
-@panya.command
-def deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
-    """ create a .deb file from installed package with alternate destination.
+@baker.command
+def x_deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
+    """Create a deb file from installed package with alternate destination.
+
         package name, version and description is taken from the source (installed) package.
 
         usage:
@@ -382,11 +356,11 @@ def deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobu
     deb_file, workdir=info
     report(deb_file)
 
-@panya.command
+@baker.command
 def show_files(deb_file):
-    """ list the contents of a deb file.
-        unlike 'dpkg --contents', only the file names are shown.
-        deb_file: deb file whose files are to be shown.
+    """List the contents of a deb file.
+
+       unlike 'dpkg --contents', only the paths are shown.
     """
     # todo: check all commands
     assert os.path.exists(cmds['ar']), ('need ar', 'try: sudo apt-get install binutils')
@@ -421,9 +395,9 @@ def installed_pkgs(pkg_glob):
         if line:
             print >>sys.stderr, line
 
-@panya.command
+@baker.command
 def show_installed_pkgs(pkg_glob):
-    """show package and version of installed packages matching a pattern. a nicer version of dpkg -l.
+    """Show package and version of installed packages matching a pattern. a nicer version of dpkg -l.
     
     example:
         installed_pkgs yoyo\*
@@ -438,15 +412,17 @@ def deb_files(pkg_glob):
 
     return glob.glob(os.path.join('/var/cache/apt/archives', pkg_glob + '*.deb'))
 
-@panya.command
-def show_deb_files(pkg_glob):
-    """list cached .deb files under /var/cache/apt/archives/"""
+@baker.command
+def x_show_deb_files(pkg_glob):
+    """List deb files cached under /var/cache/apt/archives/"""
 
     for df in deb_files(pkg_glob):
-        print df
+        ((name,version),deb_file)=df
+        # '='.join([name,version])
+        print deb_file
 
 def deb_files(pkg_glob, fetch=False):
-    """find cached deb files for the pkg_glob"""
+    """Find cached deb files for the pkg_glob."""
 
     assert os.path.exists('/usr/bin/debsums'), ('need', '/usr/bin/debsums', 'try apt-get install debsums')
     # 
@@ -482,9 +458,10 @@ def deb_files(pkg_glob, fetch=False):
 
     return debs
 
-@panya.command
+@baker.command
 def show_modified(pkg_glob, fetch=False, prefix=None):
-    """report files whose checksum differs from the pkg
+    """Report files whose checksum differs from the cached deb file.
+
     * fetch:  downloads the deb file if necessary
     * prefix: first col in tsv if supplied
     """
@@ -503,16 +480,29 @@ def show_modified(pkg_glob, fetch=False, prefix=None):
             if line:
                 print >>sys.stderr, line
 
-@panya.command
+@baker.command
 def show_diff(pkg_glob, fetch=False, workdir=None, fmt=None):
-    """diff ..."""
+    """Show the differences between installed files and content of cached deb file.
+
+    Example:
+        debify.py show_diff yoyodyne
+        /etc/yoyodyne.conf
+        < listen=127.0.0.1
+        ---
+        > listen=0.0.0.0
+    shows that the config file has been modified.
+    """
     # todo: take pkg_glob
 
     for name_ver, debfile in deb_files(pkg_glob, fetch=fetch):
-        show_diff_deb_file(debfile, workdir=workdir, fmt=fmt)
+        x_show_diff_deb_file(debfile, workdir=workdir, fmt=fmt)
 
+@baker.command
+def x_show_diff_deb_file(deb_file, workdir=None, fmt=None):
+    """Show the differences between installed files and content of cached deb file.
 
-def show_diff_deb_file(deb_file, workdir=None, fmt=None):
+    see show_diff_deb_file.
+    """
 
     if workdir:
         mkdir_p(workdir)
@@ -533,7 +523,6 @@ def show_diff_deb_file(deb_file, workdir=None, fmt=None):
                     print installed
                     print out
 
-
 def dump_content(deb_file, workdir):
 
     cmd='{ar} pf {deb_file} data.tar.gz | tar x -z -C {workdir} -f -'.format(deb_file=deb_file, 
@@ -544,30 +533,66 @@ def dump_content(deb_file, workdir):
         die("command failed: "+str(cmd))
 
     return workdir
-        
 
-@panya.command
-def help_usage():
-    """ usage
+@baker.command
+def examples():
+    """Show usage examples.
     """
-    print panya.usage()
+    doc="""debify usage examples:
 
-def cmd_args(me, major=None, minor=None, *rest):
-    if not minor:
-        major,minor='help','usage'
-    return major, minor, rest
+* Pack files into debian package by path:
+        find /usr/local/yoyodyne | debify.py yoyodyne_0.1 'custom install of yoyodyne'
+
+* Install first and then pack
+  With a few commands, install from source can be packaged so you can track and deintall the package later:
+        # the usual tgz install flow
+        wget ..../yoyodyne-0.1.tgz
+        tar xzf yoyodyne-0.1.tgz
+        cd yoyodyne-0.1
+        ./conifigure
+        # Take a pre-instll snapshot of /usr/local. 
+        # You have to know that this package only installs to /usr/local. Expand the scope as necessary.
+        find /usr/local | sort > x.pre-yoyodyne-files
+        # go ahead and install
+        sudo make install
+        # take a post-install snapshot
+        find /usr/local | sort > x.post-yoyodyne-files
+        # take the diff
+        comm -23 x.post-yoyodyne-files x.pre-yoyodyne-files > x.yoyodyne-files
+        # inspect
+        less x.yoyodyne-files
+        # package what's been installed
+        cat x.yoyodyne-files | debify.py opt-yoyodyne_0.1 'custom install of yoyodyne'
+        # Install the package so that the dpkg metadata is registered.
+        sudo dpkg -i opt-yoyodyne_0.1.deb
+
+* Show files that have been modified
+        debify.py show_modified yoyodyne
+        yoyodyne=0.1	/etc/yoyodyne.conf
+
+
+* Show diff of modified files
+        debify.py show_diff yoyodyne
+        /etc/yoyodyne.conf
+        < listen=127.0.0.1
+        ---
+        > listen=0.0.0.0
+
+* Show installed package,version
+        debify.py show_installed_pkgs yoyo\*
+        yoyodyne=0.1
+        yoyodyne-dev=0.1
+        yoyodyne-doc=0.1
+   The output can be passed to apt-get install to duplicate the same configuration
+   for pkg_version in `ssh stage debify.py show_installed_pkgs yoyo\*`; do sudo apt-get install $pkg_version; done
+
+"""
+    print doc
+    
 
 def main():
-
-    major, minor, args=cmd_args(*sys.argv)
-    # resove the command
-    try:
-        cmd_f=panya.dispatcher[major][minor]
-    except:
-        die("no such command '%s' '%s'" % (major, minor), panya.usage())
-    # invoke it
-    cmd_f(*args)
+    baker.run()
 
 if __name__=='__main__':
-    
+
     main()
