@@ -4,6 +4,7 @@ import sys,os
 import re
 import glob
 import json
+import shutil
 from subprocess import Popen, PIPE
 from tempfile import mkdtemp
 import inspect
@@ -504,11 +505,6 @@ def x_show_diff_deb_file(deb_file, workdir=None, fmt=None):
     see show_diff_deb_file.
     """
 
-    if workdir:
-        mkdir_p(workdir)
-    else:
-        workdir=mkdtemp(prefix='debify-')
-
     workdir=dump_content(deb_file, workdir)
     for xdir,sdir,files in os.walk(workdir):
         for f in files:
@@ -523,7 +519,129 @@ def x_show_diff_deb_file(deb_file, workdir=None, fmt=None):
                     print installed
                     print out
 
+class DiffFormatter(object):
+    pass
+
+class DiffFormatterSummary(DiffFormatter):
+    def content(self, a, b):
+        return 'D:', file1.replace(work_dirs[0],'')
+
+class DiffFormatterShell(DiffFormatter):
+    def content(self, a, b):
+        return 'diff', ' '.join(files)
+
+class DiffFormatterFull(DiffFormatter):
+    pass
+
+@baker.command
+def diff_deb_files(deb1, deb2, keep=False, fmt='plain'):
+    """Diff two deb files better than debdiff.
+    usages:
+        diff yoyo_01.deb yoyo_02.deb
+        diff --fmt=shell --keep yoyo_01.deb yoyo_02.deb  | grep ^diff | bash
+    """
+    # ar pf yoyodyne_0.1.deb data.tar.gz
+
+    debs=[deb1, deb2]
+    names=[ os.path.basename(d).replace('.deb', '') for d in debs ]
+    if len(set(names))==1:
+        # if the file names are the same, modify by the order.
+        names=[ "{name}-{index}".format(name=n, index=i) for i,n in enumerate(names) ]
+
+    work_dirs=[]
+    for i,(deb,name) in enumerate(zip(debs, names)):
+        work_dir=name+'.d'
+        if os.path.exists(work_dir):
+            print >>sys.stderr, 'please remove old work dir ', work_dir
+            sys.exit(1)
+        os.mkdir(work_dir)
+        cmd="ar pf {deb_file} data.tar.gz | tar xzf - -C {work_dir}"\
+            .format(deb_file=deb,  work_dir=work_dir)
+
+        out,err=Popen([cmd], shell=True, stdout=PIPE).communicate()
+
+        # echo the index, deb-file, work-dir as legend
+        print >>sys.stderr, '='.join(map(str,[i, work_dir]))
+
+        work_dirs.append(work_dir)
+
+    out,err=Popen(['/usr/bin/diff', 
+                   '-qr',
+                   '--exclude=*.pyc',
+                   '--exclude=*egg-info*']
+                  +work_dirs, stdout=PIPE).communicate()
+
+    for line in out.split('\n'):
+        # parse the diff(1) output and reformat
+        m=re.match(r'((Files) (.*) and (.*) differ|((Only in) (.*): (.*)))', line)
+        if m:
+            groups=list(m.groups())
+            whole=groups.pop(0)
+
+            if whole.startswith('Files '):
+                what=groups.pop(0)  # File, Only in
+
+                # Files {} and {} differ
+                files=groups[:2]
+                file1=files[0]
+                # formatter.content_diff
+                if fmt=='shell':
+                    # shell expression output is requested.
+                    print 'echo diff', ' '.join(files)
+                    print 'diff', ' '.join(files)
+                else:           # summary
+                    print 'D:', file1.replace(work_dirs[0],'')
+
+            elif whole.startswith('Only in '):
+                what, dirpath, basename=groups[4:]
+                # split dirpath at workdir 
+                for i,wd in enumerate(work_dirs):
+                    if dirpath.startswith(wd):
+                        break
+                _,packed_dir_path=dirpath.split(wd)
+                file_path=os.path.join(packed_dir_path.lstrip('/'), basename)
+                # todo: translate back to the deb name (not work dir name)
+                # formatter.fs_diff
+                if fmt=='shell':
+                    # is there a command that can be used to drill down this difference?
+                    print 'echo only-in:', wd, file_path
+                else: 
+                    print '{index}:'.format(index=i), wd, file_path
+            else:
+                print line
+
+    # clean up actions
+    if not keep:
+        # do this in finally clause..
+        for d in work_dirs:
+            shutil.rmtree(d)
+
+@baker.command
+def x_diff_deb_files(deb1, deb2):
+    """diff contents of two deb files"""
+    
+    workdir1=dump_content(deb1, None)
+    workdir2=dump_content(deb2, None)
+
+    out,err=Popen(['/usr/bin/diff', '-q', '-r', workdir1, workdir2], stdout=PIPE, stderr=PIPE).communicate()
+    for line in out.split('\n'):
+        m=re.match(r'^Files (.*) and (.*) differ', line)
+        if m:
+            print 'diff:', m.group(1).replace(workdir1,'')
+            #print 'diff', m.group(1), m.group(2)
+        else:
+            print line
+#    print >>sys.stderr, err('\n')
+
+    # clean up workdirs..
+    print 'rm -fr ', workdir1, workdir2
+
 def dump_content(deb_file, workdir):
+
+    if workdir:
+        mkdir_p(workdir)
+    else:
+        workdir=mkdtemp(prefix='debify-')
 
     cmd='{ar} pf {deb_file} data.tar.gz | tar x -z -C {workdir} -f -'.format(deb_file=deb_file, 
                                                                              workdir=workdir,
