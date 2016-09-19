@@ -1,8 +1,8 @@
 build
 dist
+*.pyc
+*.egg
 *.egg-info
 x
 x.*
-xx*
 *.deb
-*.html
