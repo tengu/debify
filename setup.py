@@ -8,7 +8,8 @@ setup(
     version = "0.1.2",
     license = "LGPL",
     platforms = ['POSIX', 'Windows'],
-    install_requires=["baker"]
+    install_requires=["baker"],
+    setup_requires=["nose"],
     description = "pack a set of files into a .deb file with minimal fuss.",
     author = "karasuyamatengu",
     author_email = "karasuyamatengu@gmail.com",
