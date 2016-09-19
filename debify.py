@@ -21,18 +21,19 @@ cmds=dict(
 """
 
 control_fields=[
-    ('package', None),
-    ('version', None),
+    ('package', None),          # set from file name argument.
+    ('version', None),          # set from file name argument.
     ('section', "base"),
     ('priority', "optional"),
-    ('architecture', "all"),    # xx default to the building machines.
-    ('depends', ["libc6"]),
-    ('maintainer', "taro <taro@example.com>"),
-    ('description', None),
+    ('architecture', "all"),
+    ('depends', []),            # "libc6"
+    ('maintainer', "taro <taro@example.com>"), # todo set from login
+    ('description', None),      # set from file name argument.
     ]
 
 def _pack(name_version, 
           description, 
+          control_fields_override=None,
           workdir=None,
           cpio_stream=sys.stdin,
           dest=None,
@@ -44,6 +45,9 @@ def _pack(name_version,
         --dest: package up the imorted tree to be installed relative to the dirpath named by dest.
                 defaults to root, in which case you should feed aboslute path.
     """
+
+    if not control_fields_override:
+        control_fields_override={}
 
     # allow .deb suffix. strip to make it the trunk.
     name_version=name_version.replace('.deb', '')
@@ -65,9 +69,12 @@ def _pack(name_version,
     controld.update(dict(package=name,
                          version=version,
                          description=description))
+    controld.update(control_fields_override)
 
     # place the control file
     lines=[]
+    # xx is control file sensitive to order of fields?
+    #    if not, just iter over dict items. or use ordered dict.
     for name, v in control_fields:
         val=controld[name]
         if val is None:
@@ -137,6 +144,7 @@ def _pack(name_version,
 def _pack_paths(path_stream, 
                 name_version, 
                 description, 
+                control_fields=None,
                 dest=None, 
                 postinst=None, 
                 nobuild=False, 
@@ -154,6 +162,7 @@ def _pack_paths(path_stream,
     ret=_pack(
         name_version, 
         description, 
+        control_fields_override=control_fields,
         workdir=workdir, 
         cpio_stream=pipe.stdout,
         dest=dest,
@@ -267,17 +276,36 @@ def x_pack_cpio(name_version, description, dest=None, postinst=None, nobuild=Fal
     deb_file, workdir=info
     report(deb_file)
 
-@baker.command
-def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
+def control_field_override(kwargs):
+    """
+    Extract control fields from kwargs dict.
+    returns control field dict and what's left in kwargs.
+    """
+    control_fields, remainder={}, {}
+    for k,v in kwargs.items():
+        if k.startswith('cf_'):
+            control_fields[k.replace('cf_','')] = v
+        else:
+            remainder[k]=v
+    return control_fields, remainder
+
+@baker.command(default=True)
+def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None, **kwargs):
     """Package paths fed to stdin.
 
     usage:
     find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
     """
+
+    control_fields,remainder=control_field_override(kwargs)
+    if remainder:
+        die('unknown options', repr(remainder))
+
     info=_pack_paths(
         sys.stdin, 
         name_version, 
         description, 
+        control_fields=control_fields,
         dest=dest, 
         postinst=postinst, 
         nobuild=nobuild, 
@@ -362,7 +390,12 @@ def show_files(deb_file):
 
        unlike 'dpkg --contents', only the paths are shown.
     """
-    # todo: check all commands
+    # 
+    # todo:
+    #   do `ar t foo.deb` to select the suffix for  the data.tar.*
+    #   suffix used to be gz. more recent versions use xz.
+    #   change tar command to use --xz or --gunzip accordingly.
+    # 
     assert os.path.exists(cmds['ar']), ('need ar', 'try: sudo apt-get install binutils')
 
     # ar pf - data.tar.gz | gunzip | tar tf -
@@ -424,7 +457,8 @@ def x_show_deb_files(pkg_glob):
 def deb_files(pkg_glob, fetch=False):
     """Find cached deb files for the pkg_glob."""
 
-    assert os.path.exists('/usr/bin/debsums'), ('need', '/usr/bin/debsums', 'try apt-get install debsums')
+    if not os.path.exists('/usr/bin/debsums'):
+        die('need', '/usr/bin/debsums', 'try apt-get install debsums')
     # 
     # enumerate installed pkgs
     # 
