@@ -37,5 +37,8 @@ cf-depends:
 default-command:
 	echo debify.py | ./debify.py tkm-debify_0.1 'a .deb packer' --cf_depends=py-baker
 
+with-dest:
+	echo debify.py | ./debify.py tkm-debify_0.1 'a .deb packer' /usr/local/bin/
+	dpkg --contents  tkm-debify_0.1.deb
 t:
 	python setup.py nosetests

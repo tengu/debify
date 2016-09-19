@@ -292,9 +292,10 @@ def control_field_override(kwargs):
 @baker.command(default=True)
 def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None, **kwargs):
     """Package paths fed to stdin.
-
     usage:
-    find /usr/lib/foo | $0 pack_paths foo_1.0 '<desc>'
+    find /usr/local/lib/foo | debify.py pack_paths foo_1.0 '<desc>'
+    find ./foo/ | debify.py pack_paths foo_1.0 '<desc>' /usr/local/lib/
+    find ./foo/ | debify.py pack_paths foo_1.0 '<desc>' /usr/local/lib/ --cf_depends=bar
     """
 
     control_fields,remainder=control_field_override(kwargs)
