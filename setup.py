@@ -5,7 +5,7 @@ setup(
     # packages = ["debify"],
     py_modules = ["debify"],
     scripts = ["debify.py"],
-    version = "0.1.2",
+    version = "0.1.3",
     license = "LGPL",
     platforms = ['POSIX', 'Windows'],
     install_requires=["baker"],
