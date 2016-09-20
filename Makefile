@@ -1,6 +1,8 @@
 
 all:
 
+pkg=tkm-debify_0.1
+
 upload:
 	python setup.py sdist upload
 
@@ -21,18 +23,22 @@ show-diff:
 	./debify.py show_diff yoyodyne  # --fmt=json
 
 pack-dir:
-	./debify.py pack_dir yoyodyne_0.1 'sources.list.d' /etc/apt/sources.list.d/
+	./debify.py pack_dir $(pkg) 'sources.list.d' /etc/apt/sources.list.d/
 
 show_files:
-	./debify.py show_files yoyodyne_0.1.deb
+	./debify.py show_files $(pkg).deb
 
-show_deb_files:
-	./debify.py $@ yoyo\*
+x_show_deb_files:
+	./debify.py $@ deb\*
 
-help:
-	./debify.py
+cf-depends:
+	echo debify.py | ./debify.py pack_paths tkm-debify_0.1 'a .deb packer' --cf_depends=py-baker
 
-examples:
-	./debify.py examples
+default-command:
+	echo debify.py | ./debify.py tkm-debify_0.1 'a .deb packer' --cf_depends=py-baker
 
-
+with-dest:
+	echo debify.py | ./debify.py tkm-debify_0.1 'a .deb packer' /usr/local/bin/
+	dpkg --contents  tkm-debify_0.1.deb
+t:
+	python setup.py nosetests

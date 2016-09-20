@@ -17,7 +17,7 @@ Plus other commands to make working with debian packages easier.
         wget ..../yoyodyne-0.1.tgz
         tar xzf yoyodyne-0.1.tgz
         cd yoyodyne-0.1
-        ./conifigure
+        ./configure
 
         # Take a pre-install snapshot of /usr/local. 
         # You have to know that this package only installs to /usr/local. Expand the scope as necessary.
