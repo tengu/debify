@@ -113,7 +113,7 @@ def _pack(name_version,
     if postinst:
         # user-supplied postinst script
         staged_postinst=os.path.join(DEBIAN,'postinst')
-        shcopy(postinst, staged_postinst)
+        shutil.copy(postinst, staged_postinst)
         os.chmod(staged_postinst, 0755)
     # 
     # build
@@ -440,6 +440,8 @@ def show_installed_pkgs(pkg_glob):
         yoyodyne-client
         yoyodyne-dev
     """
+    # apt list --installed
+
     for name_version in installed_pkgs(pkg_glob):
         print '='.join(name_version)
 
