@@ -78,8 +78,8 @@ def _pack(name_version,
     #    if not, just iter over dict items. or use ordered dict.
     for name, v in control_fields:
         val=controld[name]
-        if val is None:
-            die("need %s" % name)
+        if not val:
+            continue
         elif type(val) in (list, tuple):
             val=', '.join(val)
         elif isinstance(val, basestring):
