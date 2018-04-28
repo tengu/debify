@@ -39,6 +39,7 @@ def _pack(name_version,
           cpio_stream=sys.stdin,
           dest=None,
           postinst=None,
+          prerm=None,
           nobuild=False,
           preserve=False,
           ):
@@ -115,6 +116,11 @@ def _pack(name_version,
         staged_postinst=os.path.join(DEBIAN,'postinst')
         shutil.copy(postinst, staged_postinst)
         os.chmod(staged_postinst, 0755)
+    if prerm:
+        # user-supplied prerm script
+        staged_prerm=os.path.join(DEBIAN,'prerm')
+        shutil.copy(prerm, staged_prerm)
+        os.chmod(staged_prerm, 0755)
     # 
     # build
     # 
@@ -148,6 +154,7 @@ def _pack_paths(path_stream,
                 control_fields=None,
                 dest=None, 
                 postinst=None, 
+                prerm=None,
                 nobuild=False, 
                 workdir=None):
     """
@@ -168,6 +175,7 @@ def _pack_paths(path_stream,
         cpio_stream=pipe.stdout,
         dest=dest,
         postinst=postinst,
+        prerm=prerm,
         nobuild=nobuild)
 
     status=pipe.wait()
@@ -256,7 +264,7 @@ class Cmd(object):
         print self.f.func_doc
 
 @baker.command
-def x_pack_cpio(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None):
+def x_pack_cpio(name_version, description, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None):
     """Pack cpio archive into a .deb package.
 
     usage: 
@@ -272,6 +280,7 @@ def x_pack_cpio(name_version, description, dest=None, postinst=None, nobuild=Fal
           cpio_stream=sys.stdin,
           dest=dest,
           postinst=postinst,
+          prerm=prerm,
           nobuild=nobuild)
 
     deb_file, workdir=info
@@ -291,7 +300,7 @@ def control_field_override(kwargs):
     return control_fields, remainder
 
 @baker.command(default=True)
-def pack_paths(name_version, description, dest=None, postinst=None, nobuild=False, workdir=None, **kwargs):
+def pack_paths(name_version, description, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None, **kwargs):
     """Package paths fed to stdin.
     usage:
     find /usr/local/lib/foo | debify.py pack_paths foo_1.0 '<desc>'
@@ -310,6 +319,7 @@ def pack_paths(name_version, description, dest=None, postinst=None, nobuild=Fals
         control_fields=control_fields,
         dest=dest, 
         postinst=postinst, 
+        prerm=prerm,
         nobuild=nobuild, 
         workdir=workdir)
 
@@ -317,7 +327,7 @@ def pack_paths(name_version, description, dest=None, postinst=None, nobuild=Fals
     report(deb_file)
 
 @baker.command
-def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=False, workdir=None):
+def pack_dir(name_version, description, dir, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None):
     """Package files under a directory.
 
     usage:
@@ -335,6 +345,7 @@ def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=F
           cpio_stream=pipe.stdout,
           dest=dest,
           postinst=postinst,
+          prerm=prerm,
           nobuild=nobuild)
 
     if pipe.wait()!=0:
@@ -344,7 +355,7 @@ def pack_dir(name_version, description, dir, dest=None, postinst=None, nobuild=F
     report(deb_file)
 
 @baker.command
-def x_deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, nobuild=False, workdir=None):
+def x_deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None):
     """Create a deb file from installed package with alternate destination.
 
         package name, version and description is taken from the source (installed) package.
@@ -377,6 +388,7 @@ def x_deb_relocate(src_pkg_name, new_pkg_name=None, dest=None, postinst=None, no
                      description, 
                      dest=dest,
                      postinst=postinst,
+                     prerm=prerm,
                      nobuild=nobuild,
                      workdir=workdir, 
                      )

@@ -6,6 +6,9 @@ pkg=tkm-debify_0.1
 upload:
 	python setup.py sdist upload
 
+install:
+	sudo install debify.py /usr/local/bin/
+
 %.html: %.md
 	markdown $< > $@
 
