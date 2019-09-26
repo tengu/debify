@@ -6,3 +6,4 @@ dist
 x
 x.*
 *.deb
+.eggs/

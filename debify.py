@@ -18,6 +18,8 @@ cmds=dict(
     tar='/bin/tar',
 )
 
+control_script_names = ['preinst', 'postinst', 'prerm', 'postrm']
+
 """
 """
 
@@ -38,8 +40,12 @@ def _pack(name_version,
           workdir=None,
           cpio_stream=sys.stdin,
           dest=None,
+
+          preinst=None,
           postinst=None,
           prerm=None,
+          postrm=None,
+
           nobuild=False,
           preserve=False,
           ):
@@ -111,16 +117,8 @@ def _pack(name_version,
     # 
     # configure the build dir
     # 
-    if postinst:
-        # user-supplied postinst script
-        staged_postinst=os.path.join(DEBIAN,'postinst')
-        shutil.copy(postinst, staged_postinst)
-        os.chmod(staged_postinst, 0755)
-    if prerm:
-        # user-supplied prerm script
-        staged_prerm=os.path.join(DEBIAN,'prerm')
-        shutil.copy(prerm, staged_prerm)
-        os.chmod(staged_prerm, 0755)
+    for script in [preinst, postinst, prerm, postrm]:
+        stage_control_script(DEBIAN, script)
     # 
     # build
     # 
@@ -153,8 +151,12 @@ def _pack_paths(path_stream,
                 description, 
                 control_fields=None,
                 dest=None, 
+
+                preinst=None,
                 postinst=None, 
                 prerm=None,
+                postrm=None,
+
                 nobuild=False, 
                 workdir=None):
     """
@@ -174,8 +176,12 @@ def _pack_paths(path_stream,
         workdir=workdir, 
         cpio_stream=pipe.stdout,
         dest=dest,
+
+        preinst=preinst,
         postinst=postinst,
         prerm=prerm,
+        postrm=postrm,
+
         nobuild=nobuild)
 
     status=pipe.wait()
@@ -183,6 +189,18 @@ def _pack_paths(path_stream,
         raise RuntimeError('fail', cmd, status)
 
     return ret
+
+
+def stage_control_script(DEBIAN, script):
+    """Stage preinst, postinst, prerm, postrm
+    """
+    if script is None:
+        return
+    assert os.path.basename(script) in control_script_names, ('unknown control script', script)
+    staged = os.path.join(DEBIAN, script)
+    shutil.copy(script, staged)
+    os.chmod(staged, 0755)
+    return staged
 
 ################ util
 def say(inputfile, *phrases):
@@ -300,7 +318,19 @@ def control_field_override(kwargs):
     return control_fields, remainder
 
 @baker.command(default=True)
-def pack_paths(name_version, description, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None, **kwargs):
+def pack_paths(
+        name_version,
+        description,
+        dest=None,
+
+        preinst=None,
+        postinst=None,
+        prerm=None,
+        postrm=None,
+
+        nobuild=False,
+        workdir=None, 
+        **kwargs):
     """Package paths fed to stdin.
     usage:
     find /usr/local/lib/foo | debify.py pack_paths foo_1.0 '<desc>'
@@ -318,8 +348,12 @@ def pack_paths(name_version, description, dest=None, postinst=None, prerm=None, 
         description, 
         control_fields=control_fields,
         dest=dest, 
+
+        preinst=preinst,
         postinst=postinst, 
         prerm=prerm,
+        postrm=postrm,
+
         nobuild=nobuild, 
         workdir=workdir)
 
