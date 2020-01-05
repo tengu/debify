@@ -44,4 +44,4 @@ with-dest:
 	echo debify.py | ./debify.py tkm-debify_0.1 'a .deb packer' /usr/local/bin/
 	dpkg --contents  tkm-debify_0.1.deb
 t:
-	python setup.py nosetests
+	echo /usr/local/bin/rg  | python3 debify.py tkm-rg_11.0.2 'rip-grep'

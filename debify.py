@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import sys,os
 import re
@@ -33,6 +33,7 @@ control_fields=[
     ('maintainer', "taro <taro@example.com>"), # todo set from login
     ('description', None),      # set from file name argument.
     ]
+
 
 def _pack(name_version, 
           description, 
@@ -89,12 +90,12 @@ def _pack(name_version,
             continue
         elif type(val) in (list, tuple):
             val=', '.join(val)
-        elif isinstance(val, basestring):
+        elif isinstance(val, str):
             pass
         else:
             die("unexpected type for %s %s" % (name, type(val)))
         lines.append("%s: %s" % (name[:1].upper()+name[1:], val))
-    file(os.path.join(DEBIAN, 'control'), 'w').write('\n'.join(lines+['']))
+    open(os.path.join(DEBIAN, 'control'), 'w').write('\n'.join(lines+['']))
     # 
     # stage the build dir
     # populate with content
@@ -141,7 +142,7 @@ def _pack(name_version,
         try:
             rm_rf(workdir)
             workdir=None
-        except Exception, e:
+        except Exception as e:
             error("clean up of work dir {workdir} failed: {error} ".format(workdir=workdir,
                                                                                 error=str(e)))
     return deb_file, workdir
@@ -199,18 +200,18 @@ def stage_control_script(DEBIAN, script):
     assert os.path.basename(script) in control_script_names, ('unknown control script', script)
     staged = os.path.join(DEBIAN, script)
     shutil.copy(script, staged)
-    os.chmod(staged, 0755)
+    os.chmod(staged, 0x755)
     return staged
 
 ################ util
-def say(inputfile, *phrases):
-    inputfile.write(' '.join([unicode(p).encode('utf8') for p in phrases])+'\n')
 def debug(*phrases):
-    say(sys.stderr, *phrases)
+    print(*phrases, file=sys.stderr)
+def warn(*words):
+    print(*words, file=sys.stderr)
 def error(*phrases):
-    say(sys.stderr, *phrases)
+    print(*phrases, file=sys.stderr)
 def report(*phrases):
-    say(sys.stdout, *phrases)
+    print(*phrases)
 def die(*phrases):
     error(*phrases)
     sys.exit(1)
@@ -273,13 +274,13 @@ class Cmd(object):
 
         try:
             return self.f(*positional, **kwd)
-        except TypeError, e:
+        except TypeError as e:
             self.help()
             sys.exit(2)
                 
 
     def help(self):
-        print self.f.func_doc
+        print(self.f.func_doc)
 
 @baker.command
 def x_pack_cpio(name_version, description, dest=None, postinst=None, prerm=None, nobuild=False, workdir=None):
@@ -470,11 +471,11 @@ def installed_pkgs(pkg_glob):
         elif status=='unknown ok not-installed':
             pass
         else:
-            print >>sys.stderr, line
+            warn(line)
 
     for line in (err or '').split('\n'):
         if line:
-            print >>sys.stderr, line
+            warn(line)
 
 @baker.command
 def show_installed_pkgs(pkg_glob):
@@ -489,7 +490,7 @@ def show_installed_pkgs(pkg_glob):
     # apt list --installed
 
     for name_version in installed_pkgs(pkg_glob):
-        print '='.join(name_version)
+        print('='.join(name_version))
 
 def deb_files(pkg_glob):
 
@@ -502,7 +503,7 @@ def x_show_deb_files(pkg_glob):
     for df in deb_files(pkg_glob):
         ((name,version),deb_file)=df
         # '='.join([name,version])
-        print deb_file
+        print(deb_file)
 
 def deb_files(pkg_glob, fetch=False):
     """Find cached deb files for the pkg_glob."""
@@ -526,16 +527,16 @@ def deb_files(pkg_glob, fetch=False):
             # if missing fetch: apt-get install --reinstall --download-only foo=ver
             # 
             if fetch:
-                print >>sys.stderr, 'fetching:', name_eq_ver
+                warn('fetching:', name_eq_ver)
                 p=Popen(['/usr/bin/sudo', '/usr/bin/apt-get',  'install', '--reinstall', '--download-only', name_eq_ver])
                 p.wait()        # xx check status
             else:
-                print >>sys.stderr, 'skipping:', name_eq_ver
+                warn('skipping:', name_eq_ver)
                 continue
 
         matches=glob.glob(deb_glob)
         if not matches:
-            print >>sys.stderr, 'failed to fetch', name_eq_ver
+            warn('failed to fetch', name_eq_ver)
             continue
         assert len(matches)==1, ('multiple or zero matches', matches, deb_glob)
         debs.append( (name_ver, matches[0]) )
@@ -558,11 +559,11 @@ def show_modified(pkg_glob, fetch=False, prefix=None):
 
         for line in out.split('\n'):
             if line:
-                print '\t'.join(filter(None, [prefix]+['='.join(name_ver), line]))
+                print('\t'.join(filter(None, [prefix]+['='.join(name_ver), line])))
 
         for line in err.split('\n'):
             if line:
-                print >>sys.stderr, line
+                warn(line)
 
 @baker.command
 def show_diff(pkg_glob, fetch=False, workdir=None, fmt=None):
@@ -597,10 +598,10 @@ def x_show_diff_deb_file(deb_file, workdir=None, fmt=None):
             out,err=Popen(['/usr/bin/diff', packaged, installed], stdout=PIPE).communicate()
             if out:
                 if fmt=='json':
-                    print json.dumps(dict(file=installed, diff=out))
+                    print(json.dumps(dict(file=installed, diff=out)))
                 else:
-                    print installed
-                    print out
+                    print(installed)
+                    print(out)
 
 class DiffFormatter(object):
     pass
@@ -635,7 +636,7 @@ def diff_deb_files(deb1, deb2, keep=False, fmt='plain'):
     for i,(deb,name) in enumerate(zip(debs, names)):
         work_dir=name+'.d'
         if os.path.exists(work_dir):
-            print >>sys.stderr, 'please remove old work dir ', work_dir
+            warn('please remove old work dir ', work_dir)
             sys.exit(1)
         os.mkdir(work_dir)
         cmd="ar pf {deb_file} data.tar.gz | tar xzf - -C {work_dir}"\
@@ -644,7 +645,7 @@ def diff_deb_files(deb1, deb2, keep=False, fmt='plain'):
         out,err=Popen([cmd], shell=True, stdout=PIPE).communicate()
 
         # echo the index, deb-file, work-dir as legend
-        print >>sys.stderr, '='.join(map(str,[i, work_dir]))
+        warn('='.join(map(str,[i, work_dir])))
 
         work_dirs.append(work_dir)
 
@@ -670,10 +671,10 @@ def diff_deb_files(deb1, deb2, keep=False, fmt='plain'):
                 # formatter.content_diff
                 if fmt=='shell':
                     # shell expression output is requested.
-                    print 'echo diff', ' '.join(files)
-                    print 'diff', ' '.join(files)
+                    print('echo diff', ' '.join(files))
+                    print('diff', ' '.join(files))
                 else:           # summary
-                    print 'D:', file1.replace(work_dirs[0],'')
+                    print('D:', file1.replace(work_dirs[0],''))
 
             elif whole.startswith('Only in '):
                 what, dirpath, basename=groups[4:]
@@ -687,11 +688,11 @@ def diff_deb_files(deb1, deb2, keep=False, fmt='plain'):
                 # formatter.fs_diff
                 if fmt=='shell':
                     # is there a command that can be used to drill down this difference?
-                    print 'echo only-in:', wd, file_path
+                    print('echo only-in:', wd, file_path)
                 else: 
-                    print '{index}:'.format(index=i), wd, file_path
+                    print('{index}:'.format(index=i), wd, file_path)
             else:
-                print line
+                print(line)
 
     # clean up actions
     if not keep:
@@ -710,14 +711,13 @@ def x_diff_deb_files(deb1, deb2):
     for line in out.split('\n'):
         m=re.match(r'^Files (.*) and (.*) differ', line)
         if m:
-            print 'diff:', m.group(1).replace(workdir1,'')
-            #print 'diff', m.group(1), m.group(2)
+            print('diff:', m.group(1).replace(workdir1,''))
+            #print('diff', m.group(1), m.group(2))
         else:
-            print line
-#    print >>sys.stderr, err('\n')
+            print(line)
 
     # clean up workdirs..
-    print 'rm -fr ', workdir1, workdir2
+    print('rm -fr ', workdir1, workdir2)
 
 def dump_content(deb_file, workdir):
 
@@ -788,7 +788,7 @@ def examples():
    for pkg_version in `ssh stage debify.py show_installed_pkgs yoyo\*`; do sudo apt-get install $pkg_version; done
 
 """
-    print doc
+    print(doc)
     
 
 def main():
