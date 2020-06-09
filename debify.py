@@ -200,7 +200,7 @@ def stage_control_script(DEBIAN, script):
     assert os.path.basename(script) in control_script_names, ('unknown control script', script)
     staged = os.path.join(DEBIAN, script)
     shutil.copy(script, staged)
-    os.chmod(staged, 0x755)
+    os.chmod(staged, 0o755)
     return staged
 
 ################ util
